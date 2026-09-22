@@ -3,7 +3,7 @@
 and a colophon page, sized to the configured trim size.
 
 Usage:
-    python3 -m signaturize.typeset <story_dir> [--config config/default.toml]
+    python3 -m signaturize.typeset.pamphlet <story_dir> [--config <toml-or-profile>]
 Reads:  <story_dir>/meta.json, <story_dir>/body.tex
 Writes: <story_dir>/booklet.tex
 """
@@ -13,7 +13,7 @@ import json
 from string import Template
 from pathlib import Path
 
-from .config import Config, load_config
+from ..config import Config, load_config
 
 TEMPLATE = Template(r"""\documentclass[12pt]{article}
 \usepackage[paperwidth=${trim_width}in,paperheight=${trim_height}in,margin=${margin}in]{geometry}
@@ -120,7 +120,7 @@ def build(story_dir: Path, config: Config, prepared_line: str | None) -> None:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("story_dir", type=Path)
-    ap.add_argument("--config", type=Path, help="path to a TOML config file (default: built-in defaults)")
+    ap.add_argument("--config", type=Path, help="TOML config file or shipped profile name (default: built-in defaults)")
     ap.add_argument("--prepared-line", default=None, help="default: current year")
     args = ap.parse_args()
     config = load_config(args.config)

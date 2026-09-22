@@ -1,5 +1,5 @@
 """Unit tests for pure helper functions in signaturize.typeset."""
-from signaturize.typeset import latex_escape
+from signaturize.typeset.pamphlet import latex_escape
 
 
 def test_latex_escape_escapes_ampersand_percent_hash():

@@ -35,7 +35,7 @@ pip install -e .
 ## Usage
 
 ```
-signaturize build <epub_path> --slug <slug> [--config config/default.toml] [--author "..."]
+signaturize build <epub_path> --slug <slug> [--config <toml-or-profile>] [--author "..."]
 ```
 
 This writes intermediate files under `build/<slug>/`, PNG previews under
@@ -47,9 +47,20 @@ Author is read from the epub's `dc:creator` metadata by default; pass
 
 ### Configuration
 
-`config/default.toml` holds the built-in defaults for paper size, trim
-size, font, duplex-mirror compensation, and grayscale conversion. Copy it,
-edit what you need, and pass `--config <path>` to any command.
+Built-in defaults (paper size, trim size, font, duplex-mirror compensation,
+grayscale conversion) are shipped as the `pamphlet-folio-letter` profile in
+`src/signaturize/config/profiles/`. Copy it, edit what you need, and pass
+`--config <path>` (or a profile name) to any command. Unknown sections or
+keys are an error, so typos are caught rather than silently ignored.
+
+### Checking your setup
+
+```
+signaturize doctor
+```
+
+Lists which external tools, TeX packages and Python modules are present,
+and which are needed for what.
 
 ## Tests
 

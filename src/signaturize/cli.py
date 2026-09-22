@@ -3,7 +3,7 @@
 -> render previews.
 
 Usage:
-    signaturize build <epub_path> --slug <slug> [--config config/default.toml]
+    signaturize build <epub_path> --slug <slug> [--config <toml-or-profile>]
         [--build-dir build] [--preview-dir preview] [--output-dir output]
 """
 import argparse
@@ -12,10 +12,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from . import extract as extract_mod
-from . import impose as impose_mod
-from . import typeset as typeset_mod
-from .config import load_config
+from . import tools
+from .config import ConfigError, load_config
+from .impose import nested_folio as impose_mod
+from .ingest import epub as extract_mod
+from .typeset import pamphlet as typeset_mod
 
 
 def run_pandoc(body_html: Path, body_tex: Path) -> None:
@@ -38,11 +39,6 @@ def run_pdflatex(story_dir: Path, tex_name: str) -> None:
             print(f"pdflatex failed, see {log_path}", file=sys.stderr)
             print("\n".join(tail), file=sys.stderr)
             raise
-
-
-def pdf_page_count(pdf_path: Path) -> int:
-    out = subprocess.run(["pdfinfo", str(pdf_path)], capture_output=True, text=True, check=True).stdout
-    return int(out.split("Pages:")[1].split()[0])
 
 
 def render_previews(pdf_path: Path, out_dir: Path, prefix: str) -> None:
@@ -76,7 +72,7 @@ def build_booklet(
     trimmed_pdf = story_dir / "trimmed.pdf"
     shutil.copyfile(story_dir / "booklet.pdf", trimmed_pdf)
 
-    pages = pdf_page_count(trimmed_pdf)
+    pages = tools.pdf_page_count(trimmed_pdf)
     print(f"trimmed.pdf: {pages} pages")
 
     print("== impose for printing (side-by-side, landscape sheet, cover special-cased) ==")
@@ -109,24 +105,33 @@ def main(argv=None):
     build_p = sub.add_parser("build", help="build a print-ready booklet PDF from an epub")
     build_p.add_argument("epub_path", type=Path)
     build_p.add_argument("--slug", required=True)
-    build_p.add_argument("--config", type=Path, help="path to a TOML config file (default: built-in defaults)")
+    build_p.add_argument("--config", type=Path, help="TOML config file or shipped profile name (default: built-in defaults)")
     build_p.add_argument("--author", help="override author (default: from epub dc:creator metadata)")
     build_p.add_argument("--build-dir", type=Path, default=Path("build"))
     build_p.add_argument("--preview-dir", type=Path, default=Path("preview"))
     build_p.add_argument("--output-dir", type=Path, default=Path("output"))
 
+    sub.add_parser("doctor", help="check that required external tools and TeX packages are installed")
+
     args = ap.parse_args(argv)
-    if args.command == "build":
-        build_booklet(
-            args.epub_path,
-            args.slug,
-            args.config,
-            args.build_dir,
-            args.preview_dir,
-            args.output_dir,
-            author_override=args.author,
-        )
+    try:
+        if args.command == "build":
+            build_booklet(
+                args.epub_path,
+                args.slug,
+                args.config,
+                args.build_dir,
+                args.preview_dir,
+                args.output_dir,
+                author_override=args.author,
+            )
+        elif args.command == "doctor":
+            return tools.doctor()
+    except ConfigError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

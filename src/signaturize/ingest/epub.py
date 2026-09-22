@@ -4,7 +4,7 @@ clean HTML body fragment + image set, ready for the pandoc/LaTeX
 typesetting stage.
 
 Usage:
-    python3 -m signaturize.extract <epub_path> --slug <slug> [--build-dir build]
+    python3 -m signaturize.ingest.epub <epub_path> --slug <slug> [--build-dir build]
 """
 import argparse
 import json
@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-from .config import GrayscaleConfig, load_config
+from ..config import GrayscaleConfig, load_config
 
 SMALL_WORDS = {"of", "the", "a", "an", "and", "in", "on", "at", "for", "to", "by"}
 
@@ -269,7 +269,7 @@ def main():
     ap.add_argument("--slug", required=True)
     ap.add_argument("--build-dir", type=Path, default=Path("build"))
     ap.add_argument("--author", help="override author (default: from epub dc:creator metadata)")
-    ap.add_argument("--config", type=Path, help="path to a TOML config file (default: built-in defaults)")
+    ap.add_argument("--config", type=Path, help="TOML config file or shipped profile name (default: built-in defaults)")
     args = ap.parse_args()
     config = load_config(args.config)
     extract(args.epub_path, args.slug, args.build_dir, config.grayscale, author_override=args.author)

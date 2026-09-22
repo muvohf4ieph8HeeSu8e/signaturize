@@ -1,7 +1,7 @@
 """Unit tests for pure helper functions in signaturize.extract."""
 from bs4 import BeautifulSoup
 
-from signaturize.extract import clean_image_name, extract_author, title_case
+from signaturize.ingest.epub import clean_image_name, extract_author, title_case
 
 
 def test_title_case_handles_small_words():

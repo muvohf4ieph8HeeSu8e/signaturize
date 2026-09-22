@@ -33,13 +33,16 @@ swapping which of C/D lands west vs. east on the back side. It defaults to
 off -- enable it only if your printer needs it.
 
 Usage:
-    python3 -m signaturize.impose <trimmed_pdf> --outfile <out.pdf> [--sheets 1]
+    python3 -m signaturize.impose.nested_folio <trimmed_pdf> --outfile <out.pdf> [--sheets 1]
 """
 import argparse
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
-from .config import Config, load_config
+from ..config import Config, load_config
+from ..tools import pdf_page_count
 
 
 def parse_sheets(spec: str, total_sheets: int):
@@ -102,10 +105,7 @@ def compute_layout(n_pages: int):
 
 
 def build(trimmed_pdf: Path, outfile: Path, sheets_spec, config: Config, labels: bool = False) -> None:
-    n_pages = int(
-        subprocess.run(["pdfinfo", str(trimmed_pdf)], capture_output=True, text=True, check=True)
-        .stdout.split("Pages:")[1].split()[0]
-    )
+    n_pages = pdf_page_count(trimmed_pdf)
     layout = compute_layout(n_pages)
     total_sheets = len(layout)
     sheets = parse_sheets(sheets_spec, total_sheets)
@@ -146,19 +146,21 @@ def build(trimmed_pdf: Path, outfile: Path, sheets_spec, config: Config, labels:
             tex_parts.append("\\end{tikzpicture}\n\\newpage\n\n")
     tex_parts.append(r"\end{document}" + "\n")
 
-    work_dir = outfile.parent
-    tex_path = work_dir / "impose.tex"
-    tex_path.write_text("".join(tex_parts), encoding="utf-8")
+    # Build in a scratch dir so impose.tex/.aux/.log don't litter the output dir.
+    outfile.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="signaturize-impose-") as tmp:
+        work_dir = Path(tmp)
+        (work_dir / "impose.tex").write_text("".join(tex_parts), encoding="utf-8")
 
-    # Two passes: TikZ's remember-picture/overlay mechanism needs a prior
-    # .aux to resolve node placement -- a single cold pass silently drops
-    # image content (LaTeX's own "Rerun to get cross-references right").
-    for _ in range(2):
-        subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "impose.tex"],
-            cwd=work_dir, check=True, capture_output=True, text=True,
-        )
-    (work_dir / "impose.pdf").rename(outfile)
+        # Two passes: TikZ's remember-picture/overlay mechanism needs a prior
+        # .aux to resolve node placement -- a single cold pass silently drops
+        # image content (LaTeX's own "Rerun to get cross-references right").
+        for _ in range(2):
+            subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode", "-halt-on-error", "impose.tex"],
+                cwd=work_dir, check=True, capture_output=True, text=True,
+            )
+        shutil.move(str(work_dir / "impose.pdf"), str(outfile))
 
     print(f"Imposed {len(sheets)} sheet(s) ({n_pages} trim pages, {total_sheets} sheets total) -> {outfile}")
     for i in sheets:
@@ -172,7 +174,7 @@ def main():
     ap.add_argument("--outfile", type=Path, required=True)
     ap.add_argument("--sheets", help="e.g. '1' or '1-8' or '1,8' (default: all sheets)")
     ap.add_argument("--labels", action="store_true", help="print small A/B/C/D + page-number debug tags")
-    ap.add_argument("--config", type=Path, help="path to a TOML config file (default: built-in defaults)")
+    ap.add_argument("--config", type=Path, help="TOML config file or shipped profile name (default: built-in defaults)")
     ap.add_argument("--duplex-mirror", action=argparse.BooleanOptionalAction, default=None,
                      help="override config's duplex-mirror setting")
     args = ap.parse_args()

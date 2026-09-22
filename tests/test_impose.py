@@ -6,7 +6,7 @@ invariants need to hold for a wide range of page counts.
 """
 import pytest
 
-from signaturize.impose import compute_layout
+from signaturize.impose.nested_folio import compute_layout
 
 
 @pytest.mark.parametrize("n_pages", [1, 2, 3, 4, 5, 8, 9, 16, 17, 33, 50])
