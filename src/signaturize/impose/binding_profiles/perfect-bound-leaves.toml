@@ -1,0 +1,8 @@
+# Perfect-bound or side-sewn from loose single leaves (folds=0 scheme):
+# no nesting, no facing blanks. nest_preferred/nest_max are unused (every
+# leaf is its own sheet), kept here for schema consistency.
+leading_blank_leaves = 0
+trailing_blank_leaves = 0
+nest_preferred = 1
+nest_max = 1
+max_pad_pages = 1

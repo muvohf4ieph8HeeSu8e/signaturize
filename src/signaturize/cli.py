@@ -7,6 +7,8 @@ Usage:
         [--build-dir build] [--preview-dir preview] [--output-dir output]
 """
 import argparse
+import dataclasses
+import json
 import shutil
 import subprocess
 import sys
@@ -15,6 +17,11 @@ from pathlib import Path
 from . import tools
 from .config import ConfigError, load_config
 from .impose import nested_folio as impose_mod
+from .impose import printguide
+from .impose import render as render_mod
+from .impose.binding import BindingError, list_binding_profiles, load_binding_profile
+from .impose.planner import plan as plan_signatures
+from .impose.scheme import PRESETS
 from .ingest import epub as extract_mod
 from .typeset import pamphlet as typeset_mod
 
@@ -98,6 +105,79 @@ def build_booklet(
     print(f"  previews:     {preview_dir / slug}")
 
 
+def impose_pdf(
+    source_pdf: Path,
+    slug: str,
+    scheme_name: str,
+    binding_name: str,
+    output_dir: Path,
+    preview_dir: Path | None,
+    title: str | None,
+    test_sheet: bool,
+    marks: bool,
+) -> None:
+    if scheme_name not in PRESETS:
+        raise ConfigError(f"unknown scheme {scheme_name!r}; available: {', '.join(sorted(PRESETS))}")
+    scheme = PRESETS[scheme_name]
+    try:
+        binding = load_binding_profile(binding_name)
+    except BindingError as e:
+        raise ConfigError(str(e)) from e
+
+    n_pages = tools.pdf_page_count(source_pdf)
+    signature_plan = plan_signatures(n_pages, scheme, binding)
+    print(
+        f"{n_pages} source page(s) -> {signature_plan.signature_count} signature(s), "
+        f"{signature_plan.total_sheets()} sheet(s), {signature_plan.padding_pages} padding page(s)"
+    )
+    if signature_plan.padding_pages > binding.max_pad_pages:
+        print(
+            f"  warning: padding ({signature_plan.padding_pages} pages) exceeds this binding "
+            f"profile's max_pad_pages ({binding.max_pad_pages})",
+            file=sys.stderr,
+        )
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    imposed_pdf = output_dir / f"{slug}-imposed.pdf"
+    render_mod.render(source_pdf, signature_plan, imposed_pdf, marks=marks, slug_prefix=f"{slug} ")
+    print(f"  imposed PDF:      {imposed_pdf}")
+
+    plan_json = output_dir / f"{slug}-signature-plan.json"
+    plan_json.write_text(
+        json.dumps(
+            {
+                "scheme": dataclasses.asdict(scheme),
+                "binding": dataclasses.asdict(binding),
+                "content_pages": signature_plan.content_pages,
+                "padding_pages": signature_plan.padding_pages,
+                "signature_count": signature_plan.signature_count,
+                "leaves": [dataclasses.asdict(leaf) for leaf in signature_plan.leaves],
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(f"  signature plan:   {plan_json}")
+
+    printing_md = output_dir / f"{slug}-PRINTING.md"
+    printing_md.write_text(
+        printguide.render_printing_guide(title or slug, signature_plan, imposed_pdf.name), encoding="utf-8"
+    )
+    print(f"  printing guide:   {printing_md}")
+
+    if test_sheet:
+        test_sheet_pdf = output_dir / f"{slug}-test-sheet.pdf"
+        render_mod.render(
+            source_pdf, signature_plan, test_sheet_pdf,
+            sheets_filter={(1, 1)}, marks=marks, slug_prefix=f"{slug} ",
+        )
+        print(f"  test sheet:       {test_sheet_pdf}")
+
+    if preview_dir is not None:
+        render_previews(imposed_pdf, preview_dir / slug / "sheet-order", "sheet")
+        print(f"  previews:         {preview_dir / slug / 'sheet-order'}")
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="signaturize")
     sub = ap.add_subparsers(dest="command", required=True)
@@ -113,6 +193,24 @@ def main(argv=None):
 
     sub.add_parser("doctor", help="check that required external tools and TeX packages are installed")
 
+    impose_p = sub.add_parser(
+        "impose",
+        help="impose any typeset PDF onto print-ready sheets (general planner: multi-signature, "
+        "single leaves, hardcover blanks -- quarto/octavo not yet implemented, see impose/scheme.py)",
+    )
+    impose_p.add_argument("pdf_path", type=Path)
+    impose_p.add_argument("--slug", required=True, help="used for output filenames")
+    impose_p.add_argument("--scheme", default="folio", choices=sorted(PRESETS), help="fold/sheet preset")
+    impose_p.add_argument(
+        "--binding", default="pamphlet",
+        help=f"binding profile name (default: pamphlet); available: {', '.join(list_binding_profiles())}",
+    )
+    impose_p.add_argument("--title", help="book title, for PRINTING.md (default: --slug)")
+    impose_p.add_argument("--output-dir", type=Path, default=Path("output"))
+    impose_p.add_argument("--preview-dir", type=Path, default=None, help="if set, render PNG previews here")
+    impose_p.add_argument("--test-sheet", action="store_true", help="also render just signature 1, sheet 1")
+    impose_p.add_argument("--no-marks", action="store_true", help="omit collation marks and slug lines")
+
     args = ap.parse_args(argv)
     try:
         if args.command == "build":
@@ -127,6 +225,18 @@ def main(argv=None):
             )
         elif args.command == "doctor":
             return tools.doctor()
+        elif args.command == "impose":
+            impose_pdf(
+                args.pdf_path,
+                args.slug,
+                args.scheme,
+                args.binding,
+                args.output_dir,
+                args.preview_dir,
+                args.title,
+                args.test_sheet,
+                not args.no_marks,
+            )
     except ConfigError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2

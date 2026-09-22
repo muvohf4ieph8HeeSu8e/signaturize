@@ -1,0 +1,7 @@
+# Staple/saddle-stitch pamphlet: no facing blanks, nest as many folio
+# sheets as fit (up to nest_max) into one signature.
+leading_blank_leaves = 0
+trailing_blank_leaves = 0
+nest_preferred = 8
+nest_max = 16
+max_pad_pages = 4

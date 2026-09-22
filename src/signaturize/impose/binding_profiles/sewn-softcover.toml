@@ -1,0 +1,7 @@
+# Sewn softcover: multiple smaller signatures (easier to sew through),
+# no facing blanks required by the binding itself.
+leading_blank_leaves = 0
+trailing_blank_leaves = 0
+nest_preferred = 4
+nest_max = 6
+max_pad_pages = 6

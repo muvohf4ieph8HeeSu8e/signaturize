@@ -57,7 +57,7 @@ def run_checks() -> list[Check]:
         _tex_file("microtype.sty", "microtypography (planned)", required=False),
         _tex_file("fontspec.sty", "OpenType fonts (planned)", required=False),
         _tex_file("tgpagella.sty", "TeX Gyre Pagella preset (planned)", required=False),
-        _python_module("pikepdf", "PDF imposition (planned)", required=False),
+        _python_module("pikepdf", "general PDF imposition (signaturize impose)"),
         _python_module("PIL", "image processing (planned; package name Pillow)", required=False),
         _python_module("bs4", "epub ingestion (beautifulsoup4)"),
         _python_module("lxml", "epub ingestion"),

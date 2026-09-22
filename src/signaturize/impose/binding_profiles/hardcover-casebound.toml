@@ -1,0 +1,8 @@
+# Hardcover: a blank leaf front and back for the case to attach to
+# (the pastedown/endpaper facing page), smaller signatures for a cleaner
+# spine.
+leading_blank_leaves = 1
+trailing_blank_leaves = 1
+nest_preferred = 4
+nest_max = 6
+max_pad_pages = 8
