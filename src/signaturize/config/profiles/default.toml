@@ -2,15 +2,9 @@
 # Copy this file and pass --config <path> to override any of these values.
 # Any section/key omitted from your override file keeps the built-in default.
 
-[paper]
-# Physical sheet the booklet is printed on (landscape orientation).
-width_in = 11.0
-height_in = 8.5
-
 [trim]
-# Finished (folded) page size, and the text margin within it.
-width_in = 5.5
-height_in = 8.5
+# Text margin within the trim size. Trim size itself is derived from
+# --paper + --scheme (see impose/scheme.py), not configured here.
 margin_in = 0.6
 
 [font]
@@ -19,7 +13,7 @@ name = "bookman"
 [imposition]
 # Some printers mirror the back face of a duplexed sheet left/right relative
 # to the front face. Enable this only if your printer needs that
-# compensation (see src/signaturize/impose.py for details) -- most don't.
+# compensation (see src/signaturize/impose/render.py for details) -- most don't.
 duplex_mirror = false
 
 [grayscale]

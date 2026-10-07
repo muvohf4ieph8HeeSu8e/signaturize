@@ -15,15 +15,25 @@ within one signature of `n` sheets, sheet 1 is outermost and sheet n is
 innermost. Reading front to back through the assembled signature you
 encounter: sheet1's outward-facing leaf, sheet2's, ..., sheetn's (going
 in), then sheetn's other leaf, ..., sheet1's other leaf (coming back out).
-This is the same order impose/nested_folio.py's compute_layout() computes
-for a single signature (see tests/test_planner.py for the equivalence
-check) -- generalized here to (a) many signatures, filled from a shared
-page sequence, and (b) blank leading/trailing/padding leaves as data
-instead of two special-cased slots.
+This is the same order the original single-signature pamphlet pipeline
+used, pinned to golden values in
+tests/golden/legacy_nested_folio_layout.json and checked against this
+module's own output in tests/test_regression_legacy.py and
+tests/test_planner.py -- generalized here to (a) many signatures, filled
+from a shared page sequence, and (b) blank leading/trailing/padding leaves
+as data instead of two special-cased slots.
+
+A caller with its own opinion about content-layer placement (e.g. pinning
+a specific page as a cover, or forcing a blank next to it) can pass an
+explicit `content_sequence` to plan() instead of a bare page count -- see
+typeset/pamphlet.py's cover_sequence() for the one shipped example. This
+module stays content-agnostic: it only ever sees a sequence of page
+numbers (or None for blank) to lay out.
 """
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from .binding import BindingProfile
@@ -89,8 +99,22 @@ def _group_sheets(total_sheets: int, binding: BindingProfile) -> list[int]:
     return sizes
 
 
-def plan(content_pages: int, scheme: Scheme, binding: BindingProfile) -> SignaturePlan:
-    """Build a SignaturePlan for a book of `content_pages` source pages."""
+def plan(
+    content_pages: int,
+    scheme: Scheme,
+    binding: BindingProfile,
+    *,
+    content_sequence: Sequence[int | None] | None = None,
+) -> SignaturePlan:
+    """Build a SignaturePlan for a book of `content_pages` source pages.
+
+    By default the content is laid out as plain sequential order
+    (1..content_pages). Pass `content_sequence` instead to give an
+    explicit page order -- its non-None entries must be exactly
+    1..content_pages, each appearing once; a None stands in for a blank
+    forced into the middle of the content (not just before/after it, which
+    `binding.leading_blank_leaves`/`trailing_blank_leaves` already cover).
+    """
     if content_pages < 1:
         raise ValueError("content_pages must be >= 1")
     if scheme.folds not in (0, 1):
@@ -99,27 +123,40 @@ def plan(content_pages: int, scheme: Scheme, binding: BindingProfile) -> Signatu
             "(see scheme.py's module docstring)"
         )
 
+    if content_sequence is None:
+        content_sequence = list(range(1, content_pages + 1))
+    else:
+        content_sequence = list(content_sequence)
+        placed = sorted(p for p in content_sequence if p is not None)
+        if placed != list(range(1, content_pages + 1)):
+            raise ValueError(
+                "content_sequence must place every page in 1..content_pages exactly once"
+            )
+
     pages_per_leaf = 2 if scheme.duplex else 1
     leaves_per_sheet = scheme.leaves_per_sheet  # 1 for folds=0, 2 for folds=1
 
-    content_leaves = math.ceil(content_pages / pages_per_leaf)
+    content_slots = len(content_sequence)
+    content_leaves = math.ceil(content_slots / pages_per_leaf)
     total_leaves_needed = binding.leading_blank_leaves + content_leaves + binding.trailing_blank_leaves
 
     total_sheets = max(1, math.ceil(total_leaves_needed / leaves_per_sheet))
     sheet_sizes = _group_sheets(total_sheets, binding)
 
     total_leaves_planned = sum(sheet_sizes) * leaves_per_sheet
-    # Padding pages fill out both (a) content_pages up to a whole leaf
-    # (e.g. an odd page count leaves the last leaf's verso blank) and (b)
-    # the leaves needed up to a whole number of sheets. Both land right
-    # after the content, before any trailing blank leaves.
-    padding_pages = (content_leaves * pages_per_leaf - content_pages) + (
+    # Padding pages fill out both (a) content_sequence up to a whole leaf
+    # (e.g. an odd page count, or a content-layer gap like
+    # typeset.pamphlet.cover_sequence()'s, leaves the last content leaf's
+    # verso blank) and (b) the leaves needed up to a whole number of
+    # sheets. Both land right after the content, before any trailing blank
+    # leaves.
+    padding_pages = (content_leaves * pages_per_leaf - content_slots) + (
         total_leaves_planned - total_leaves_needed
     ) * pages_per_leaf
 
     sequence: list[int | None] = (
         [None] * (binding.leading_blank_leaves * pages_per_leaf)
-        + list(range(1, content_pages + 1))
+        + content_sequence
         + [None] * padding_pages
         + [None] * (binding.trailing_blank_leaves * pages_per_leaf)
     )

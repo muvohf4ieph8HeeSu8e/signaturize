@@ -1,7 +1,9 @@
 """Shared test helpers: a dependency-free numbered-page PDF writer and
-poppler-based text extraction, so PDF-level tests need no TeX or PDF library."""
+poppler-based text extraction, so PDF-level tests need no TeX or PDF
+library; plus a minimal synthetic epub for CLI end-to-end tests."""
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -64,6 +66,28 @@ def pdf_text(pdf: Path, page: int, crop: tuple[int, int, int, int] | None = None
     return subprocess.run(cmd + [str(pdf), "-"], capture_output=True, text=True, check=True).stdout.strip()
 
 
+def pdf_page_size_in(pdf: Path, page: int = 1) -> tuple[float, float]:
+    """(width_in, height_in) of one 1-indexed page via pdfinfo -- the
+    *effective*, as-rendered/as-printed size, honoring a /Rotate of 90 or
+    270 by swapping width/height (pdfinfo's own "size:" line always
+    reports the raw, unrotated MediaBox, so this reads its separate
+    "rot:" line too). With -f/-l narrowing to one page, poppler labels
+    the lines "Page N size:"/"Page N rot:" rather than "Page size:"/"Page
+    rot:" (its unnarrowed, single-page-doc phrasing) -- match on
+    "size:"/"pts" and "rot:" rather than a fixed prefix to handle both."""
+    out = subprocess.run(
+        ["pdfinfo", "-f", str(page), "-l", str(page), str(pdf)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    size_line = next(l for l in out.splitlines() if "size:" in l and "pts" in l)
+    w_pt, h_pt = (float(x) for x in size_line.split(":", 1)[1].split("pts")[0].split("x"))
+    rot_line = next(l for l in out.splitlines() if "rot:" in l)
+    rotation = int(rot_line.split(":", 1)[1].strip())
+    if rotation in (90, 270):
+        w_pt, h_pt = h_pt, w_pt
+    return w_pt / 72.0, h_pt / 72.0
+
+
 requires_poppler = pytest.mark.skipif(
     shutil.which("pdftotext") is None or shutil.which("pdfinfo") is None,
     reason="poppler-utils not installed",
@@ -72,3 +96,50 @@ requires_latex = pytest.mark.skipif(
     shutil.which("pdflatex") is None or shutil.which("pandoc") is None,
     reason="pdflatex/pandoc not installed",
 )
+
+
+_CONTAINER_XML = """<?xml version="1.0"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>
+"""
+
+_CONTENT_OPF = """<?xml version="1.0"?>
+<package xmlns="http://www.idpf.org/2007/opf" unique-identifier="id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:title>A Tiny Test Tale</dc:title>
+    <dc:creator>Jane Doe</dc:creator>
+    <dc:identifier id="id">http://www.gutenberg.org/12345</dc:identifier>
+  </metadata>
+  <manifest>
+    <item id="pg-header" href="body.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="pg-header"/>
+  </spine>
+</package>
+"""
+
+_BODY_XHTML = """<?xml version="1.0"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+<body>
+<h2 id="pgepubid1">A Tiny Test Tale</h2>
+<p>Once upon a time, in a very small book, there lived a very short story.</p>
+<p>It had just enough words to fill a single signature, and not one more.</p>
+</body>
+</html>
+"""
+
+
+def write_minimal_epub(path: Path) -> Path:
+    """A minimal but valid epub (one untitled tale, no images) satisfying
+    ingest/epub.py's extract() -- used by the CLI end-to-end tests
+    (test_cli_ingest.py, test_cli_typeset.py, test_cli_build.py)."""
+    with zipfile.ZipFile(path, "w") as zf:
+        zf.writestr("mimetype", "application/epub+zip", zipfile.ZIP_STORED)
+        zf.writestr("META-INF/container.xml", _CONTAINER_XML)
+        zf.writestr("OEBPS/content.opf", _CONTENT_OPF)
+        zf.writestr("OEBPS/body.xhtml", _BODY_XHTML)
+    return path

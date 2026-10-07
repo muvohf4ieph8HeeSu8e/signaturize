@@ -4,9 +4,54 @@ original beatrix-potter scripts produced."""
 from __future__ import annotations
 
 from .planner import SignaturePlan
+from .render import sheet_face_pages
+
+_COL_NAMES = ("left", "right")  # folds=1's only two physical columns
 
 
-def render_printing_guide(title: str, signature_plan: SignaturePlan, imposed_pdf_name: str) -> str:
+def _cell(page_num: int | None) -> str:
+    return "blank" if page_num is None else str(page_num)
+
+
+def _page_map_lines(signature_plan: SignaturePlan, duplex_mirror: bool) -> list[str]:
+    """A per-sheet table of which trim page lands in which physical
+    column of each face, as the sheet lies flat before folding -- see
+    render.sheet_face_pages()'s own docstring for why this, not the
+    rendered PDF itself, is the easy thing to check order against."""
+    scheme = signature_plan.scheme
+    faces = ["front", "back"] if scheme.duplex else ["front"]
+    sample = sheet_face_pages(signature_plan, 1, 1, duplex_mirror=duplex_mirror)
+    n_cols = len(sample["front"])
+    col_names = _COL_NAMES if n_cols == 2 else [f"col {i + 1}" for i in range(n_cols)]
+    headers = ["sheet"] + [f"{face} {col}" for face in faces for col in col_names]
+
+    lines = [
+        "Reading the rendered PDF directly to check page order is awkward: the back face of "
+        "each sheet is necessarily drawn in a different column order than it reads once folded "
+        "(see `impose/render.py`). This table instead shows each sheet as it lies flat, *before* "
+        "folding -- \"front\" is the face that ends up outward once folded, \"back\" (if duplex) "
+        "the one that ends up inward -- so no mental page-flipping is needed to check it.",
+        "",
+    ]
+    for sig in range(1, signature_plan.signature_count + 1):
+        n_sheets = signature_plan.sheets_in_signature(sig)
+        if signature_plan.signature_count > 1:
+            lines += [f"### Signature {sig}", ""]
+        lines.append("| " + " | ".join(headers) + " |")
+        lines.append("|" + "---|" * len(headers))
+        for sheet in range(1, n_sheets + 1):
+            pages = sheet_face_pages(signature_plan, sig, sheet, duplex_mirror=duplex_mirror)
+            tag = " (outermost)" if sheet == 1 else (" (innermost)" if sheet == n_sheets else "")
+            row = [f"{sheet}{tag}"] + [_cell(p) for face in faces for p in pages[face]]
+            lines.append("| " + " | ".join(row) + " |")
+        if sig < signature_plan.signature_count:
+            lines.append("")
+    return lines
+
+
+def render_printing_guide(
+    title: str, signature_plan: SignaturePlan, imposed_pdf_name: str, *, duplex_mirror: bool = False,
+) -> str:
     scheme = signature_plan.scheme
     sig_count = signature_plan.signature_count
     total_sheets = signature_plan.total_sheets()
@@ -65,13 +110,18 @@ def render_printing_guide(title: str, signature_plan: SignaturePlan, imposed_pdf
     else:
         lines.append(f"(folds={scheme.folds} guide text not implemented yet.)")
 
+    if scheme.folds in (0, 1):
+        lines += ["", "## Page map (verify without opening the PDF)", ""]
+        lines += _page_map_lines(signature_plan, duplex_mirror)
+
     lines += [
         "",
         "## Check before committing to a full run",
         "",
         "Print just the first signature's test sheet(s), fold by hand, and confirm the pages "
         "read in the right order and right-side-up before printing the rest -- fold geometry for "
-        "anything beyond a single center fold has not been physically verified yet.",
+        "anything beyond a single center fold has not been physically verified yet. The page map "
+        "above tells you what each test sheet *should* show, if you'd rather check it that way.",
         "",
     ]
     return "\n".join(lines)

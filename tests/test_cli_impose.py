@@ -1,7 +1,7 @@
 """End-to-end test of `signaturize impose` through the CLI."""
 import json
 
-from conftest import requires_poppler, write_numbered_pdf
+from conftest import pdf_page_size_in, pdf_text, requires_poppler, write_numbered_pdf
 
 from signaturize.cli import main
 from signaturize.tools import pdf_page_count
@@ -41,3 +41,85 @@ def test_impose_cli_rejects_unknown_scheme_and_binding(tmp_path, capsys):
     rc = main(["impose", str(src), "--slug", "x", "--binding", "no-such-profile", "--output-dir", str(tmp_path / "out")])
     assert rc == 2
     assert "no-such-profile" in capsys.readouterr().err
+
+
+@requires_poppler
+def test_impose_cli_pin_cover_pins_the_front_cover(tmp_path):
+    n_pages = 13
+    src = write_numbered_pdf(tmp_path / "src.pdf", n_pages)
+    output_dir = tmp_path / "output"
+    rc = main([
+        "impose", str(src), "--slug", "x", "--scheme", "folio",
+        "--output-dir", str(output_dir), "--pin-cover",
+    ])
+    assert rc == 0
+
+    plan_json = json.loads((output_dir / "x-signature-plan.json").read_text())
+    by_sheet_slot = {(leaf["sheet_index"], leaf["sheet_slot"]): leaf for leaf in plan_json["leaves"]}
+    # sheet 1, slot 0 (the leaf whose recto is the signature's front
+    # cover): page 1 as the recto, forced-blank verso (the reverse of
+    # that same leaf stands in for a deliberately-skipped imprint page).
+    front = by_sheet_slot[(1, 0)]
+    assert front["recto_page"] == 1
+    assert front["verso_page"] is None
+
+
+@requires_poppler
+def test_impose_cli_config_duplex_mirror_swaps_back_face(tmp_path):
+    src = write_numbered_pdf(tmp_path / "src.pdf", 4)
+    config_file = tmp_path / "mirror.toml"
+    config_file.write_text("[imposition]\nduplex_mirror = true\n", encoding="utf-8")
+
+    normal_dir = tmp_path / "normal"
+    rc = main([
+        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(normal_dir),
+        "--no-marks", "--landscape-feed",
+    ])
+    assert rc == 0
+
+    mirrored_dir = tmp_path / "mirrored"
+    rc = main([
+        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(mirrored_dir),
+        "--no-marks", "--config", str(config_file), "--landscape-feed",
+    ])
+    assert rc == 0
+
+    normal_back_west = pdf_text(normal_dir / "x-imposed.pdf", 2, (0, 0, 396, 612))
+    mirrored_back_east = pdf_text(mirrored_dir / "x-imposed.pdf", 2, (396, 0, 396, 612))
+    assert normal_back_west == mirrored_back_east
+
+
+@requires_poppler
+def test_folio_cli_defaults_to_portrait_page_landscape_feed_restores_literal(tmp_path):
+    src = write_numbered_pdf(tmp_path / "src.pdf", 4)
+
+    default_dir = tmp_path / "default"
+    rc = main(["impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(default_dir)])
+    assert rc == 0
+    # new default: physical page stays portrait, content rotated to compensate
+    assert pdf_page_size_in(default_dir / "x-imposed.pdf") == (8.5, 11.0)
+
+    landscape_dir = tmp_path / "landscape"
+    rc = main([
+        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(landscape_dir),
+        "--landscape-feed",
+    ])
+    assert rc == 0
+    # --landscape-feed opts back into a literal landscape page
+    assert pdf_page_size_in(landscape_dir / "x-imposed.pdf") == (11.0, 8.5)
+
+
+@requires_poppler
+def test_single_leaf_scheme_end_to_end_is_full_sheet_no_fold(tmp_path):
+    src = write_numbered_pdf(tmp_path / "src.pdf", 3, width_pt=8.5 * 72, height_pt=11.0 * 72)
+    output_dir = tmp_path / "output"
+    rc = main([
+        "impose", str(src), "--slug", "flat", "--paper", "us-letter", "--scheme", "single-leaf",
+        "--binding", "perfect-bound-leaves", "--output-dir", str(output_dir),
+    ])
+    assert rc == 0
+    imposed = output_dir / "flat-imposed.pdf"
+    assert imposed.exists()
+    # single-leaf (folds=0): every output page is a full, unfolded sheet --
+    # no half-size panels from a fold.
+    assert pdf_page_size_in(imposed) == (8.5, 11.0)

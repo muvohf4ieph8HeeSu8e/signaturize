@@ -12,7 +12,7 @@ from dataclasses import dataclass, field, fields, replace
 from importlib import resources
 from pathlib import Path
 
-DEFAULT_PROFILE = "pamphlet-folio-letter"
+DEFAULT_PROFILE = "default"
 
 
 class ConfigError(ValueError):
@@ -20,15 +20,10 @@ class ConfigError(ValueError):
 
 
 @dataclass
-class PaperConfig:
-    width_in: float = 11.0
-    height_in: float = 8.5
-
-
-@dataclass
 class TrimConfig:
-    width_in: float = 5.5
-    height_in: float = 8.5
+    # Trim width/height are derived from --paper + --scheme (see
+    # impose/scheme.py's resolve_scheme()), not configured here -- only
+    # the text margin is a config/project-level choice.
     margin_in: float = 0.6
 
 
@@ -40,7 +35,8 @@ class FontConfig:
 @dataclass
 class ImpositionConfig:
     # Some printers mirror the back face of a duplexed sheet left/right
-    # relative to the front face -- see impose/nested_folio.py's build().
+    # relative to the front face -- see impose/render.py's
+    # render(duplex_mirror=...).
     duplex_mirror: bool = False
 
 
@@ -52,7 +48,6 @@ class GrayscaleConfig:
 
 @dataclass
 class Config:
-    paper: PaperConfig = field(default_factory=PaperConfig)
     trim: TrimConfig = field(default_factory=TrimConfig)
     font: FontConfig = field(default_factory=FontConfig)
     imposition: ImpositionConfig = field(default_factory=ImpositionConfig)
@@ -106,8 +101,8 @@ def load_config(source: Path | str | None) -> Config:
     """Build a Config from built-in defaults, optionally overridden.
 
     `source` is None (defaults), a path to a TOML file, or the bare name of
-    a shipped profile (e.g. "pamphlet-folio-letter"). An existing file wins
-    over a profile of the same name.
+    a shipped profile (e.g. "default"). An existing file wins over a
+    profile of the same name.
     """
     config = Config()
     if source is None:

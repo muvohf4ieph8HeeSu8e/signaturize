@@ -107,6 +107,28 @@ def test_folds_above_one_not_implemented():
         plan(50, quarto, load_binding_profile("pamphlet"))
 
 
+def test_content_sequence_inserts_an_internal_gap():
+    binding = load_binding_profile("pamphlet")
+    result = plan(5, PRESETS["folio"], binding, content_sequence=[1, None, 2, 3, 4, 5])
+    placed = [p for leaf in result.leaves for p in (leaf.recto_page, leaf.verso_page) if p is not None]
+    assert sorted(placed) == list(range(1, 6))
+    assert result.content_pages == 5
+
+
+def test_content_sequence_rejects_a_page_set_that_does_not_match_content_pages():
+    binding = load_binding_profile("pamphlet")
+    with pytest.raises(ValueError):
+        plan(5, PRESETS["folio"], binding, content_sequence=[1, 2, 3])  # missing 4, 5
+
+
+def test_content_sequence_omitted_matches_default_sequential_order():
+    binding = load_binding_profile("pamphlet")
+    a = plan(17, PRESETS["folio"], binding)
+    b = plan(17, PRESETS["folio"], binding, content_sequence=list(range(1, 18)))
+    assert a.leaves == b.leaves
+    assert a.padding_pages == b.padding_pages
+
+
 def test_shipped_binding_profiles_load():
     for name in list_binding_profiles():
         profile = load_binding_profile(name)
