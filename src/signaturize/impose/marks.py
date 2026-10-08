@@ -26,7 +26,13 @@ MARK_HEIGHT_PT = 6.0
 MARGIN_PT = 36.0  # top/bottom keepout
 
 PAGE_NUMBER_FONT_SIZE_PT = 6.0
-PAGE_NUMBER_MARGIN_PT = 4.0
+# 4pt (the original value) sits inside most consumer printers' unprintable
+# edge margin (commonly 0.125in-0.25in / 9pt-18pt) -- it showed up fine in
+# a PDF viewer (which always renders the full page) but was silently
+# clipped on an actual printed sheet. 16pt (~0.22in) clears that, while
+# staying well inside typeset.pamphlet's own 0.6in trim margin so it
+# never overlaps real page content.
+PAGE_NUMBER_MARGIN_PT = 16.0
 _HELVETICA_DIGIT_WIDTH_EM = 0.556  # AFM advance width, uniform across 0-9 -- lets
 # a plain numeric label be centered without a full font-metrics dependency.
 

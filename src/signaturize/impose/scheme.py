@@ -103,41 +103,80 @@ class Scheme:
 
 def sheet_panel_layout(folds: int) -> tuple[list[list[Panel]], list[list[Panel]]]:
     """(front_grid, back_grid): grid[row][col] = Panel for that position on
-    the flat, as-printed sheet. In traditional imposition terms, `front`
-    is the sheet's "outer forme" (the printing pass whose pages end up
-    facing outward once folded) and `back` is the "inner forme" (faces
-    inward); `Panel.side` says whether a given leaf's recto or verso
-    lands at that position. Validated for folds in {0, 1}; see module
-    docstring for why folds >= 2 is not yet implemented."""
+    the flat, as-printed sheet -- `front` and `back` are just the first and
+    second printed pass of a duplexed sheet (render() always emits
+    front_grid's content as each sheet's first PDF page, back_grid's as
+    its second); for folds=1 neither pass is uniformly "outward" or
+    "inward" across the whole sheet -- see that case's own comment below.
+    `Panel.side` says whether a given leaf's recto or verso lands at that
+    position. Validated for folds in {0, 1}; see module docstring for why
+    folds >= 2 is not yet implemented."""
     if folds == 0:
         # A single unfolded leaf: front face is its recto, back its verso.
         front = [[Panel(rank=0, side="recto", rotation=0)]]
         back = [[Panel(rank=0, side="verso", rotation=0)]]
         return front, back
     if folds == 1:
-        # One center fold: the sheet's FIRST-printed face ("front" --
-        # outer forme) ends up facing outward once folded; the
-        # SECOND-printed face ("back" -- inner forme) ends up facing
-        # inward. West half's front = its recto, back = its verso; the
+        # One center fold, west half | east half. A single sheet's two
+        # printed passes ("front"/"back") don't map onto outward/inward
+        # uniformly across both halves -- they're mirror images of each
+        # other around the shared spine (the fold line), so whichever
+        # pass is the pair of *covers* (front cover on one half, back
+        # cover on the other -- the two faces that end up on the
+        # OUTSIDE of the folded sheet) necessarily holds west's recto on
+        # one pass and east's recto on the *other* pass. Concretely:
+        # west half's recto lands on "back", verso on "front"; the
         # reverse for the east half. No rotation is needed for a single
         # fold.
         #
-        # This is the reverse of what an earlier version of this module
-        # assumed (front=inward, back=outward), based on reading the
-        # original pre-signaturize pipeline's own sample output rather
-        # than actually folding a physically-printed sheet -- that sample
-        # was never itself fold-tested, and a real print+fold test showed
-        # the title ending up on the *inside* under the old assumption.
-        # Corrected here; see tests/test_regression_legacy.py and
-        # tests/test_render.py for the physical-pass/content mapping this
-        # now produces.
-        front = [[Panel(0, "recto", 0), Panel(0, "verso", 0)]]
-        back = [[Panel(0, "verso", 0), Panel(0, "recto", 0)]]
+        # This is the original pre-signaturize pamphlet pipeline's own
+        # A/B/C/D convention (front=[A,B]=[west verso, east recto],
+        # back=[C,D]=[west recto, east verso]), carried over exactly --
+        # it's the one convention in this file with actual physical
+        # print-and-fold provenance: verified against five real,
+        # physically-printed-and-folded books in
+        # tests/test_regression_legacy.py (which also checks render()'s
+        # actual column placement, including the printer-mirror default
+        # -- see render.py's duplex_mirror). An earlier version of this
+        # function (uniformly front=recto/back=verso for *both* halves)
+        # diverged from this on the unverified claim of a physical test
+        # that in hindsight never actually happened -- that version
+        # produced a correctly-placed cover by coincidence (the leaf
+        # nested opposite the cover was blank, masking the error) but
+        # scrambled every later sheet's reading order, caught only when
+        # a real print-and-fold test of a full book was done.
+        front = [[Panel(0, "verso", 0), Panel(0, "recto", 0)]]
+        back = [[Panel(0, "recto", 0), Panel(0, "verso", 0)]]
         return front, back
     raise NotImplementedError(
         f"folds={folds} (quarto/octavo/16mo) panel geometry is not yet "
         "implemented -- see this module's docstring. Use folds=0 (single "
         "leaves) or folds=1 (folio, nested multi-signature) for now."
+    )
+
+
+def outward_face(folds: int) -> str:
+    """Which printed pass ("front" or "back") is the one a signature's
+    OUTERMOST sheet shows to someone holding the closed, folded signature
+    without opening it -- used for render.py's once-per-signature
+    collation mark, which only means anything drawn on that visible
+    face. For folds=1, unlike individual panels (see
+    sheet_panel_layout()'s own comment on why west/east differ), the
+    *covers* -- both halves of one pass -- are uniformly "back": a single
+    sheet's two covers (front cover + back cover) are always the two
+    halves of the SAME pass, confirmed by sheet_panel_layout()'s own
+    west/east asymmetry (west's recto -- the title -- lands on "back";
+    for a cover-to-cover relationship to hold at all, east's verso, the
+    far end of that same pass, must be the other cover). For folds=0
+    there's no fold, so "front" (recto, the single visible page) is the
+    reasonable choice."""
+    if folds == 0:
+        return "front"
+    if folds == 1:
+        return "back"
+    raise NotImplementedError(
+        f"folds={folds} (quarto/octavo/16mo) panel geometry is not yet "
+        "implemented -- see this module's docstring."
     )
 
 

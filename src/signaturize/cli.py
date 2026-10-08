@@ -78,13 +78,12 @@ def typeset_story(
 
 
 def write_plan_artifacts(
-    output_dir: Path, slug: str, title: str, signature_plan, imposed_pdf: Path, *, duplex_mirror: bool = False,
+    output_dir: Path, slug: str, title: str, signature_plan, imposed_pdf: Path,
 ) -> tuple[Path, Path]:
     """Write a <slug>-signature-plan.json (machine-readable leaf/sheet/
     signature plan) and a <slug>-PRINTING.md (human fold/gather guide,
-    including a page map -- see printguide.py -- reflecting `duplex_mirror`
-    so it matches whatever render_mod.render() actually drew) for an
-    imposed PDF, shared by both `build` and `impose`."""
+    including a page map -- see printguide.py) for an imposed PDF, shared
+    by both `build` and `impose`."""
     plan_json = output_dir / f"{slug}-signature-plan.json"
     plan_json.write_text(
         json.dumps(
@@ -104,9 +103,7 @@ def write_plan_artifacts(
 
     printing_md = output_dir / f"{slug}-PRINTING.md"
     printing_md.write_text(
-        printguide.render_printing_guide(
-            title, signature_plan, imposed_pdf.name, duplex_mirror=duplex_mirror,
-        ),
+        printguide.render_printing_guide(title, signature_plan, imposed_pdf.name),
         encoding="utf-8",
     )
     print(f"  printing guide:   {printing_md}")
@@ -257,10 +254,7 @@ def impose_pdf(
     )
     print(f"  imposed PDF:      {imposed_pdf}")
 
-    write_plan_artifacts(
-        output_dir, slug, title or slug, signature_plan, imposed_pdf,
-        duplex_mirror=config.imposition.duplex_mirror,
-    )
+    write_plan_artifacts(output_dir, slug, title or slug, signature_plan, imposed_pdf)
 
     if test_sheet:
         test_sheet_pdf = output_dir / f"{slug}-test-sheet.pdf"

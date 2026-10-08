@@ -66,27 +66,30 @@ def test_impose_cli_pin_cover_pins_the_front_cover(tmp_path):
 
 @requires_poppler
 def test_impose_cli_config_duplex_mirror_swaps_back_face(tmp_path):
+    """duplex_mirror defaults to True, so the CLI's own default run (no
+    --config) is already the "mirrored" case here -- contrasted against
+    an explicit duplex_mirror=false config for the unmirrored baseline."""
     src = write_numbered_pdf(tmp_path / "src.pdf", 4)
-    config_file = tmp_path / "mirror.toml"
-    config_file.write_text("[imposition]\nduplex_mirror = true\n", encoding="utf-8")
+    config_file = tmp_path / "unmirrored.toml"
+    config_file.write_text("[imposition]\nduplex_mirror = false\n", encoding="utf-8")
 
-    normal_dir = tmp_path / "normal"
+    unmirrored_dir = tmp_path / "unmirrored"
     rc = main([
-        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(normal_dir),
-        "--no-marks", "--landscape-feed",
+        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(unmirrored_dir),
+        "--no-marks", "--config", str(config_file), "--landscape-feed",
     ])
     assert rc == 0
 
     mirrored_dir = tmp_path / "mirrored"
     rc = main([
         "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(mirrored_dir),
-        "--no-marks", "--config", str(config_file), "--landscape-feed",
+        "--no-marks", "--landscape-feed",
     ])
     assert rc == 0
 
-    normal_back_west = pdf_text(normal_dir / "x-imposed.pdf", 2, (0, 0, 396, 612))
+    unmirrored_back_west = pdf_text(unmirrored_dir / "x-imposed.pdf", 2, (0, 0, 396, 612))
     mirrored_back_east = pdf_text(mirrored_dir / "x-imposed.pdf", 2, (396, 0, 396, 612))
-    assert normal_back_west == mirrored_back_east
+    assert unmirrored_back_west == mirrored_back_east
 
 
 @requires_poppler

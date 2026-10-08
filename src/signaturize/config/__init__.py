@@ -34,10 +34,13 @@ class FontConfig:
 
 @dataclass
 class ImpositionConfig:
-    # Some printers mirror the back face of a duplexed sheet left/right
-    # relative to the front face -- see impose/render.py's
-    # render(duplex_mirror=...).
-    duplex_mirror: bool = False
+    # A standard duplex printer flipping a sheet on its long edge mirrors
+    # the back face's columns left/right relative to the front -- on by
+    # default, verified byte-for-byte against five real, physically
+    # printed-and-folded books (see tests/test_regression_legacy.py and
+    # impose/render.py's render(duplex_mirror=...)). Set this to false
+    # only if your printer's duplex unit doesn't do this (uncommon).
+    duplex_mirror: bool = True
 
 
 @dataclass

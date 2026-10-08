@@ -11,10 +11,12 @@ margin_in = 0.6
 name = "bookman"
 
 [imposition]
-# Some printers mirror the back face of a duplexed sheet left/right relative
-# to the front face. Enable this only if your printer needs that
-# compensation (see src/signaturize/impose/render.py for details) -- most don't.
-duplex_mirror = false
+# A standard duplex printer flipping a sheet on its long edge mirrors the
+# back face's columns left/right relative to the front -- on by default,
+# verified against five real, physically printed-and-folded books (see
+# src/signaturize/impose/render.py for details). Set this to false only
+# if your printer's duplex unit doesn't do this (uncommon).
+duplex_mirror = true
 
 [grayscale]
 enabled = true

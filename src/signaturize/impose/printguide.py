@@ -13,24 +13,39 @@ def _cell(page_num: int | None) -> str:
     return "blank" if page_num is None else str(page_num)
 
 
-def _page_map_lines(signature_plan: SignaturePlan, duplex_mirror: bool) -> list[str]:
+def _page_map_lines(signature_plan: SignaturePlan) -> list[str]:
     """A per-sheet table of which trim page lands in which physical
-    column of each face, as the sheet lies flat before folding -- see
-    render.sheet_face_pages()'s own docstring for why this, not the
+    column of each face, as the sheet lies flat *after printing but
+    before folding* -- i.e. the final, physical result you should
+    actually see on paper. Always computed with duplex_mirror=False,
+    regardless of the actual render() setting used for the PDF file:
+    duplex_mirror pre-compensates the FILE for a printer's own physical
+    mirroring of its back face, so the two cancel out and the correctly
+    printed sheet always matches this unmirrored layout -- showing the
+    *file's* own (possibly pre-swapped) column encoding here would
+    describe something no one ever looks at on paper. If your printed
+    sheet doesn't match this table, that itself is useful diagnostic
+    information: duplex_mirror is probably set wrong for your printer
+    (see impose/render.py).
+
+    See render.sheet_face_pages()'s own docstring for why this, not the
     rendered PDF itself, is the easy thing to check order against."""
     scheme = signature_plan.scheme
     faces = ["front", "back"] if scheme.duplex else ["front"]
-    sample = sheet_face_pages(signature_plan, 1, 1, duplex_mirror=duplex_mirror)
+    sample = sheet_face_pages(signature_plan, 1, 1, duplex_mirror=False)
     n_cols = len(sample["front"])
     col_names = _COL_NAMES if n_cols == 2 else [f"col {i + 1}" for i in range(n_cols)]
     headers = ["sheet"] + [f"{face} {col}" for face in faces for col in col_names]
 
     lines = [
-        "Reading the rendered PDF directly to check page order is awkward: the back face of "
-        "each sheet is necessarily drawn in a different column order than it reads once folded "
-        "(see `impose/render.py`). This table instead shows each sheet as it lies flat, *before* "
-        "folding -- \"front\" is the face that ends up outward once folded, \"back\" (if duplex) "
-        "the one that ends up inward -- so no mental page-flipping is needed to check it.",
+        "Reading the rendered PDF directly to check page order is awkward: which sheet-relative "
+        "position ends up outward vs inward, and left vs right, once folded isn't the same for "
+        "every panel (see `impose/scheme.py`), and the back face's columns in the PDF *file* are "
+        "deliberately pre-swapped to compensate for your printer's own mirroring (`duplex_mirror`, "
+        "see `impose/render.py`) -- so the file itself doesn't visually match what prints. This "
+        "table instead shows each *printed* sheet exactly as it should lie flat, before folding, "
+        "once actually printed -- so no mental page-flipping, fold-direction guessing, or "
+        "mirror-compensation math is needed to check it.",
         "",
     ]
     for sig in range(1, signature_plan.signature_count + 1):
@@ -40,7 +55,7 @@ def _page_map_lines(signature_plan: SignaturePlan, duplex_mirror: bool) -> list[
         lines.append("| " + " | ".join(headers) + " |")
         lines.append("|" + "---|" * len(headers))
         for sheet in range(1, n_sheets + 1):
-            pages = sheet_face_pages(signature_plan, sig, sheet, duplex_mirror=duplex_mirror)
+            pages = sheet_face_pages(signature_plan, sig, sheet, duplex_mirror=False)
             tag = " (outermost)" if sheet == 1 else (" (innermost)" if sheet == n_sheets else "")
             row = [f"{sheet}{tag}"] + [_cell(p) for face in faces for p in pages[face]]
             lines.append("| " + " | ".join(row) + " |")
@@ -49,9 +64,7 @@ def _page_map_lines(signature_plan: SignaturePlan, duplex_mirror: bool) -> list[
     return lines
 
 
-def render_printing_guide(
-    title: str, signature_plan: SignaturePlan, imposed_pdf_name: str, *, duplex_mirror: bool = False,
-) -> str:
+def render_printing_guide(title: str, signature_plan: SignaturePlan, imposed_pdf_name: str) -> str:
     scheme = signature_plan.scheme
     sig_count = signature_plan.signature_count
     total_sheets = signature_plan.total_sheets()
@@ -92,10 +105,15 @@ def render_printing_guide(
             n_sheets = signature_plan.sheets_in_signature(sig)
             lines.append(
                 f"{sig}. Signature {sig}: stack its {n_sheets} sheet(s) in order (sheet 1 on top), "
-                "fold the whole stack in half down the vertical center, and check the staggered "
-                "collation mark on the spine matches this signature's position before moving on."
+                "fold the whole stack in half **vertically, down the center, bringing the left edge "
+                "to the right edge** (the fold direction matters -- the other direction hides the "
+                "cover and shows its blank reverse instead), and check the staggered collation mark "
+                "on the spine matches this signature's position before moving on."
             )
         lines += [
+            "",
+            "Trim the open (right-hand) edge for a cleaner finish once gathered, if you'd like -- "
+            "optional, the pages read fine either way.",
             "",
             "Gather the folded signatures in order (signature 1 first) and staple or sew along "
             "the common spine fold." if sig_count > 1 else
@@ -112,7 +130,7 @@ def render_printing_guide(
 
     if scheme.folds in (0, 1):
         lines += ["", "## Page map (verify without opening the PDF)", ""]
-        lines += _page_map_lines(signature_plan, duplex_mirror)
+        lines += _page_map_lines(signature_plan)
 
     lines += [
         "",

@@ -7,19 +7,21 @@ from signaturize.config import ConfigError, list_profiles, load_config
 def test_defaults_with_no_path():
     config = load_config(None)
     assert config.trim.margin_in == 0.6
-    assert config.imposition.duplex_mirror is False
+    # True: a standard long-edge-flip duplex printer's own behavior,
+    # verified against five real printed books -- see impose/render.py.
+    assert config.imposition.duplex_mirror is True
 
 
 def test_partial_override_keeps_other_defaults(tmp_path):
     config_file = tmp_path / "custom.toml"
     config_file.write_text(
         '[trim]\nmargin_in = 0.5\n'
-        '[imposition]\nduplex_mirror = true\n',
+        '[imposition]\nduplex_mirror = false\n',
         encoding="utf-8",
     )
     config = load_config(config_file)
     assert config.trim.margin_in == 0.5
-    assert config.imposition.duplex_mirror is True
+    assert config.imposition.duplex_mirror is False
     # untouched sections keep built-in defaults
     assert config.font.name == "bookman"
 

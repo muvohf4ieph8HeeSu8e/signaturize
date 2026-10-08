@@ -5,20 +5,37 @@ simulator (scheme.py) calls for one. One PDF page is written per sheet
 face (front, then back if duplex) -- page order is already duplex-ready
 print order.
 
-planner.py's sheet_slot 0/1 (called "west"/"east" in scheme.py's grid
-terms) are placed on the *opposite* physical column from their slot
-number by default (slot 0 -> the east/right column, slot 1 -> west/left)
--- confirmed by a physical print-and-fold test, after the naive
-column==slot mapping put a pinned cover's title page on the wrong
-(west/left) side of the sheet's outward face instead of the right.
+planner.py's sheet_slot 0/1 ("west"/"east" leaves) are placed directly on
+their own physical column (slot 0 -> west/left, slot 1 -> east/right) --
+no column swap by default. This, together with scheme.py's front/back
+Panel assignment, is the original pamphlet pipeline's own proven
+imposition convention, carried over exactly (see scheme.py's
+sheet_panel_layout() docstring for why a *uniform* column swap was tried
+here and reverted: it produced a correctly-placed cover by coincidence
+but scrambled every later sheet's order, caught only once a full book,
+not just one test sheet, was actually printed and folded).
 
-Some printers additionally mirror the back face of a duplexed sheet
-left/right relative to the front face; render()'s `duplex_mirror` option
-compensates for that by swapping, column for column, which content lands
-in each physical cell of the back face only, on top of the west/east
-swap above -- the cells themselves stay where they are (the fold line
-doesn't move), but what's drawn into one cell is what would otherwise
-have gone in the other.
+A standard duplex printer flipping a sheet on its long edge mirrors the
+back face's columns left/right relative to the front -- so `duplex_mirror`
+(default True) swaps, column for column, which content lands in each
+physical cell of the back face only; the cells themselves stay where
+they are (the fold line doesn't move), but what's drawn into one cell is
+what would otherwise have gone in the other. The front face is never
+swapped, mirror or not. This default was wrong (off) until it was
+checked, page by page and column by column, against five real,
+physically-printed-and-folded books (the original pamphlet pipeline's
+own `output/*-booklet.pdf`, via `--landscape-feed`, which matches that
+original tool's literal-landscape page convention exactly) -- all five
+matched byte-for-byte once `duplex_mirror=True` (see
+tests/test_regression_legacy.py). The portrait-page `/Rotate=90` default
+below computes identical content placement either way and is *claimed*
+to print the same once duplexed, but that specific combination
+(rotate-flagged page + mirrored back face) hasn't itself been
+physically confirmed the way the literal-landscape path has -- pass
+`--landscape-feed` if you want the one path with direct physical proof,
+or verify the rotated default with your own `--test-sheet` first. Set
+`duplex_mirror=False` only if your printer's duplex unit doesn't mirror
+the back face (uncommon).
 
 When `marks` is on (the default), every panel gets a small page-number
 label (see marks.add_page_number()) so you can verify order after
@@ -57,7 +74,7 @@ import pikepdf
 
 from .marks import add_collation_mark, add_page_number
 from .planner import SignaturePlan
-from .scheme import Panel, sheet_panel_layout
+from .scheme import Panel, outward_face, sheet_panel_layout
 
 PT_PER_IN = 72.0
 
@@ -66,32 +83,25 @@ def _resolve_cell(cols: int, row: int, col: int, mirror: bool) -> tuple[int, int
     """(src_col, slot) for one physical (row, col) position on a sheet
     face -- shared by render()'s own placement loop and sheet_face_pages()
     below, so the two can never drift apart. planner.py's sheet_slot 0/1
-    ("west"/"east" in scheme.py's grid terms) land on the *opposite*
-    physical column from a naive column==slot mapping (slot 0 -> the
-    east/right column, slot 1 -> west/left) -- confirmed by a physical
-    print-and-fold test, after the naive mapping put a pinned cover's
-    title page on the wrong (west/left) side of the sheet's outward face
-    instead of the right; see this module's docstring. `mirror`
-    (duplex_mirror) is a separate, printer-specific concern layered on
-    top of that: it swaps which content lands in each physical cell
-    again, column for column, but only for the back face, to compensate
-    for a printer that mirrors the back face left/right relative to the
-    front -- the cells themselves never move (the fold line doesn't),
-    only which source column each one reads from."""
-    src_col = col if mirror else (cols - 1 - col)
+    ("west"/"east" leaves) land directly on their own physical column
+    (no swap) by default; `mirror` (duplex_mirror), on only for the back
+    face of a printer that needs that compensation, swaps it column for
+    column -- see this module's docstring."""
+    src_col = (cols - 1 - col) if mirror else col
     slot = row * cols + src_col
     return src_col, slot
 
 
 def sheet_face_pages(
-    signature_plan: SignaturePlan, sig_index: int, sheet_index: int, *, duplex_mirror: bool = False,
+    signature_plan: SignaturePlan, sig_index: int, sheet_index: int, *, duplex_mirror: bool = True,
 ) -> dict[str, list[int | None]]:
     """The trim-page number landing in each physical column of each face
     of one physical sheet, left-to-right as the sheet lies flat before
-    folding -- "front" is the pass that ends up facing outward once
-    folded, "back" (present only for a duplex scheme) the one that ends
-    up facing inward; see scheme.py's sheet_panel_layout(). None stands
-    for a blank cell.
+    folding -- "front"/"back" (present only for a duplex scheme) are the
+    sheet's first/second printed pass; see scheme.py's
+    sheet_panel_layout() for which pages end up outward vs inward once
+    folded (for folds=1 that's not simply "front" or "back" uniformly --
+    see its own docstring). None stands for a blank cell.
 
     Pure data, computed with the exact same column resolution
     (_resolve_cell) render() itself draws from, so it can't drift from
@@ -152,17 +162,18 @@ def render(
     *,
     sheets_filter: set[tuple[int, int]] | None = None,
     marks: bool = True,
-    duplex_mirror: bool = False,
+    duplex_mirror: bool = True,
     landscape_feed: bool = False,
 ) -> None:
     """Write imposed sheets to `outfile`. If `sheets_filter` is given, only
     those (signature_index, sheet_index) pairs are rendered (e.g. for a
-    one-sheet physical test print). `duplex_mirror` compensates for a
-    printer that mirrors the back face left/right relative to the front;
-    `landscape_feed` opts into a literal landscape PDF page instead of
-    this function's default of a `/Rotate`-flagged page that prints onto
-    the paper's natural portrait shape -- see this module's docstring for
-    both."""
+    one-sheet physical test print). `duplex_mirror` (default True)
+    compensates for a standard long-edge-flip duplex printer mirroring the
+    back face left/right relative to the front; `landscape_feed` opts into
+    a literal landscape PDF page instead of this function's default of a
+    `/Rotate`-flagged page that prints onto the paper's natural portrait
+    shape -- see this module's docstring for both, including which
+    combination is actually physically verified."""
     scheme = signature_plan.scheme
     rows, cols = scheme.grid
     cell_w_pt = scheme.cell_width_in * PT_PER_IN
@@ -217,6 +228,10 @@ def render(
         # (via pdftotext) as the previous content-matrix approach this
         # replaced.
         rotate = not landscape_feed and sheet_w_pt > sheet_h_pt
+        # The face a signature's outermost sheet actually shows without
+        # unfolding it -- see scheme.py's outward_face(). Collation marks
+        # only mean anything drawn there.
+        cover_face = outward_face(scheme.folds)
 
         for sig_index in range(1, signature_plan.signature_count + 1):
             for sheet_index in range(1, signature_plan.sheets_in_signature(sig_index) + 1):
@@ -227,7 +242,7 @@ def render(
                     page = out.add_blank_page(page_size=(sheet_w_pt, sheet_h_pt))
                     place(page, grid, sig_index, sheet_index, mirror=(duplex_mirror and face_name == "back"))
                     # Once per signature, not once per sheet -- see marks.py.
-                    if marks and face_name == "front" and scheme.duplex and sheet_index == 1:
+                    if marks and face_name == cover_face and scheme.duplex and sheet_index == 1:
                         add_collation_mark(
                             page, sheet_h_pt, spine_x_pt, sig_index, signature_plan.signature_count
                         )
