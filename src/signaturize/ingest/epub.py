@@ -11,10 +11,16 @@ import json
 import re
 import shutil
 import subprocess
+import warnings
 import zipfile
 from pathlib import Path
 
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
+# The XHTML body files are deliberately parsed with lxml's lenient HTML
+# parser rather than its XML parser (see the flat-list comment below for
+# why), so bs4's "you're parsing XML as HTML" warning is expected noise here.
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
 
 from ..config import GrayscaleConfig, load_config
 
