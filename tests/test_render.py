@@ -48,7 +48,7 @@ def test_folio_sheet_halves_hold_the_planned_pages(tmp_path):
 
 @requires_poppler
 def test_folio_default_rotates_content_into_a_portrait_page(tmp_path):
-    """The new default (landscape_feed=False): the physical PDF page
+    """The opt-in portrait encoding (landscape_feed=False): the physical PDF page
     stays portrait-shaped (the paper's own natural orientation) and the
     whole folio layout rotates 90 degrees into it as one rigid unit --
     west content (logical left half) lands in the top half of the
@@ -60,7 +60,7 @@ def test_folio_default_rotates_content_into_a_portrait_page(tmp_path):
     src = write_numbered_pdf(tmp_path / "src.pdf", n_pages)
     result = plan(n_pages, PRESETS["folio"], NO_BLANKS)
     out = tmp_path / "imposed.pdf"
-    render(src, result, out, marks=False)  # landscape_feed defaults to False
+    render(src, result, out, marks=False, landscape_feed=False)
 
     assert pdf_page_size_in(out) == (8.5, 11.0)  # portrait, not the 11x8.5 landscape sheet
     leaves = result.leaves_of(1, 1)

@@ -27,18 +27,20 @@ physically-printed-and-folded books (the original pamphlet pipeline's
 own `output/*-booklet.pdf`, via `--landscape-feed`, which matches that
 original tool's literal-landscape page convention exactly) -- all five
 matched byte-for-byte once `duplex_mirror=True` (see
-tests/test_regression_legacy.py). The portrait-page `/Rotate=90` default
-below computes identical content placement either way and is *claimed*
-to print the same once duplexed, but that specific combination
+tests/test_regression_legacy.py). That literal-landscape page is the
+default. The optional portrait-page `/Rotate=90` encoding (see below)
+computes identical content placement either way and is *claimed* to
+print the same once duplexed, but that specific combination
 (rotate-flagged page + mirrored back face) hasn't itself been
-physically confirmed the way the literal-landscape path has -- pass
-`--landscape-feed` if you want the one path with direct physical proof,
-or verify the rotated default with your own `--test-sheet` first. Set
+physically confirmed the way the literal-landscape path has -- verify
+it with your own `--test-sheet` first if you choose it. Set
 `duplex_mirror=False` only if your printer's duplex unit doesn't mirror
 the back face (uncommon).
 
 When `marks` is on (the default), every panel gets a small page-number
-label (see marks.add_page_number()) so you can verify order after
+label (see marks.add_page_number(); `page_overlay=False` drops just the
+label and keeps the collation marks, for a source that already prints its
+own page numbers -- see detect.has_printed_page_numbers()) so you can verify order after
 printing and folding without reading the actual content, and each
 signature's outermost sheet gets one collation mark on its outward face
 (see marks.add_collation_mark()) -- not one per sheet, since its purpose
@@ -46,25 +48,21 @@ signature's outermost sheet gets one collation mark on its outward face
 only makes sense once per signature.
 
 A scheme like folio needs a logically-landscape sheet for its own panel
-math (room for two side-by-side portrait leaves) -- but not every
-printer can physically feed paper long-edge-first to produce a literal
-landscape PDF page. By default (`landscape_feed=False`), render() builds
-the page content exactly as it would for a literal landscape page, then
-sets the PDF's standard `/Rotate = 90` page attribute, so PDF
-viewers/printers display and print it rotated into the paper's own
-natural (portrait) shape -- the printed sheet comes out physically
-identical to what a literal landscape page would have produced, just
-encoded with the standard rotation flag instead of a literal landscape
-MediaBox. Pass `landscape_feed=True` to get a literal landscape page
-instead (no `/Rotate`), for printers that can feed paper that way.
-Either way, the content is necessarily sideways in a flat, straight-on
-preview (on screen, or a print preview) -- that's inherent to the
-feature, not a bug: you print onto portrait paper and physically turn
-the sheet 90 degrees by hand before folding, so there's no way to also
-make it look upright in a flat preview. The rotation direction is a
-reasoned default, not something verifiable without a physical print --
-verify with a `--test-sheet` before a full run, the same caution this
-project already applies to `duplex_mirror` and to multi-fold schemes.
+math (room for two side-by-side portrait leaves). By default
+(`landscape_feed=True`), render() writes a literal landscape PDF page,
+which displays upright on screen and is what the physically verified
+regression books used. Pass `landscape_feed=False` (CLI:
+`--portrait-feed`) to instead build the page content exactly as it
+would for a literal landscape page and then set the PDF's standard
+`/Rotate = 90` page attribute, so PDF viewers/printers display and print
+it rotated into the paper's own natural (portrait) shape -- for printers
+that cannot take a landscape page. That encoding is necessarily sideways
+in a flat, straight-on preview (on screen, or a print preview); you print
+onto portrait paper and physically turn the sheet 90 degrees by hand
+before folding. Its rotation direction is a reasoned default, not
+something verifiable without a physical print -- verify with a
+`--test-sheet` before a full run, the same caution this project already
+applies to `duplex_mirror` and to multi-fold schemes.
 """
 from __future__ import annotations
 
@@ -162,15 +160,16 @@ def render(
     *,
     sheets_filter: set[tuple[int, int]] | None = None,
     marks: bool = True,
+    page_overlay: bool = True,
     duplex_mirror: bool = True,
-    landscape_feed: bool = False,
+    landscape_feed: bool = True,
 ) -> None:
     """Write imposed sheets to `outfile`. If `sheets_filter` is given, only
     those (signature_index, sheet_index) pairs are rendered (e.g. for a
     one-sheet physical test print). `duplex_mirror` (default True)
     compensates for a standard long-edge-flip duplex printer mirroring the
-    back face left/right relative to the front; `landscape_feed` opts into
-    a literal landscape PDF page instead of this function's default of a
+    back face left/right relative to the front; `landscape_feed`
+    (default True) writes a literal landscape PDF page; False writes a
     `/Rotate`-flagged page that prints onto the paper's natural portrait
     shape -- see this module's docstring for both, including which
     combination is actually physically verified."""
@@ -215,7 +214,7 @@ def render(
                     page.contents_add(
                         f"q {a} {b} {c} {d} {e:.3f} {f:.3f} cm {xobj_name} Do Q\n".encode()
                     )
-                    if marks:
+                    if marks and page_overlay:
                         add_page_number(page, page_num, cell_x, cell_y, cell_w_pt, cell_h_pt)
 
         # If the sheet is logically landscape and the caller hasn't opted

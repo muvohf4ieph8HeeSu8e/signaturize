@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import tools
 from .config import Config, ConfigError, load_config
+from .impose import detect as detect_mod
 from .impose import printguide
 from .impose import render as render_mod
 from .impose.binding import BindingError, list_binding_profiles, load_binding_profile
@@ -176,7 +177,7 @@ def build_booklet(
     scheme_name: str,
     binding_name: str,
     pin_cover: bool,
-    landscape_feed: bool = False,
+    landscape_feed: bool = True,
     page_numbers: bool = False,
     prepared_line: str | None = None,
     author_override: str | None = None,
@@ -204,6 +205,23 @@ def build_booklet(
     )
 
 
+def _page_overlay_wanted(source_pdf: Path, mode: str) -> bool:
+    """Whether to draw impose's own per-panel page-number label. `auto`
+    skips it when the source PDF already prints page numbers, so the two
+    don't print on top of each other."""
+    if mode == "on":
+        return True
+    if mode == "off":
+        return False
+    if detect_mod.has_printed_page_numbers(source_pdf):
+        print(
+            "  source already prints page numbers: skipping the per-panel page-number overlay "
+            "(collation marks kept; --page-overlay on to force it)"
+        )
+        return False
+    return True
+
+
 def impose_pdf(
     source_pdf: Path,
     slug: str,
@@ -218,7 +236,8 @@ def impose_pdf(
     *,
     pin_cover: bool = False,
     config_path: Path | None = None,
-    landscape_feed: bool = False,
+    landscape_feed: bool = True,
+    page_overlay: str = "auto",
 ) -> None:
     if paper_name not in PAPER_SIZES:
         raise ConfigError(f"unknown paper size {paper_name!r}; available: {', '.join(sorted(PAPER_SIZES))}")
@@ -245,11 +264,13 @@ def impose_pdf(
             file=sys.stderr,
         )
 
+    overlay = marks and _page_overlay_wanted(source_pdf, page_overlay)
+
     output_dir.mkdir(parents=True, exist_ok=True)
     imposed_pdf = output_dir / f"{slug}-imposed.pdf"
     render_mod.render(
         source_pdf, signature_plan, imposed_pdf,
-        marks=marks, duplex_mirror=config.imposition.duplex_mirror,
+        marks=marks, page_overlay=overlay, duplex_mirror=config.imposition.duplex_mirror,
         landscape_feed=landscape_feed,
     )
     print(f"  imposed PDF:      {imposed_pdf}")
@@ -260,7 +281,7 @@ def impose_pdf(
         test_sheet_pdf = output_dir / f"{slug}-test-sheet.pdf"
         render_mod.render(
             source_pdf, signature_plan, test_sheet_pdf,
-            sheets_filter={(1, 1)}, marks=marks,
+            sheets_filter={(1, 1)}, marks=marks, page_overlay=overlay,
             duplex_mirror=config.imposition.duplex_mirror, landscape_feed=landscape_feed,
         )
         print(f"  test sheet:       {test_sheet_pdf}")
@@ -295,10 +316,15 @@ def main(argv=None):
     )
     build_p.set_defaults(pin_cover=True)
     build_p.add_argument(
-        "--landscape-feed", action="store_true",
-        help="use a literal landscape PDF page for folio/bag-fold instead of the default portrait "
-        "page with rotated content -- pass this if your printer can feed paper long-edge-first",
+        "--landscape-feed", dest="landscape_feed", action="store_true",
+        help="literal landscape PDF page for folio/bag-fold (the default; accepted for old commands)",
     )
+    build_p.add_argument(
+        "--portrait-feed", dest="landscape_feed", action="store_false",
+        help="portrait PDF page with rotated content (/Rotate=90) for folio/bag-fold, for printers "
+        "that cannot take a landscape page; displays sideways on screen",
+    )
+    build_p.set_defaults(landscape_feed=True)
     build_p.add_argument(
         "--page-numbers", action="store_true",
         help="number the story body pages in the trim PDF itself (TeX-rendered, default: off) -- a "
@@ -360,19 +386,41 @@ def main(argv=None):
         help="TOML config file or shipped profile name; currently only [imposition] duplex_mirror affects impose",
     )
     impose_p.add_argument(
-        "--pin-cover", action="store_true",
+        "--pin-cover", dest="pin_cover", action="store_true",
         help="pin page 1 as this signature's cover, with a forced blank beside it "
-        "(typeset.pamphlet's title-page convention, as `build` uses by default)",
+        "(typeset.pamphlet's title-page convention; default: on, as in `build`)",
     )
     impose_p.add_argument(
-        "--landscape-feed", action="store_true",
-        help="use a literal landscape PDF page for folio/bag-fold instead of the default portrait "
-        "page with rotated content -- pass this if your printer can feed paper long-edge-first",
+        "--no-pin-cover", dest="pin_cover", action="store_false",
+        help="disable the pinned-cover content layout (plain page order, for arbitrary PDFs)",
     )
+    impose_p.set_defaults(pin_cover=True)
+    impose_p.add_argument(
+        "--landscape-feed", dest="landscape_feed", action="store_true",
+        help="literal landscape PDF page for folio/bag-fold (the default; accepted for old commands)",
+    )
+    impose_p.add_argument(
+        "--portrait-feed", dest="landscape_feed", action="store_false",
+        help="portrait PDF page with rotated content (/Rotate=90) for folio/bag-fold, for printers "
+        "that cannot take a landscape page; displays sideways on screen",
+    )
+    impose_p.set_defaults(landscape_feed=True)
     impose_p.add_argument("--title", help="book title, for PRINTING.md (default: --slug)")
     impose_p.add_argument("--output-dir", type=Path, default=Path("output"))
     impose_p.add_argument("--preview-dir", type=Path, default=None, help="if set, render PNG previews here")
-    impose_p.add_argument("--test-sheet", action="store_true", help="also render just signature 1, sheet 1")
+    impose_p.add_argument(
+        "--test-sheet", dest="test_sheet", action="store_true",
+        help="also render just signature 1, sheet 1 (default: on)",
+    )
+    impose_p.add_argument(
+        "--no-test-sheet", dest="test_sheet", action="store_false", help="skip the one-sheet test print",
+    )
+    impose_p.set_defaults(test_sheet=True)
+    impose_p.add_argument(
+        "--page-overlay", choices=["auto", "on", "off"], default="auto",
+        help="impose's own per-panel page-number label: auto (default) skips it when the source PDF "
+        "already prints page numbers, on always draws it, off never does; collation marks are unaffected",
+    )
     impose_p.add_argument(
         "--no-marks", action="store_true",
         help="omit collation marks and impose's own per-panel page-number overlay (a verification aid, "
@@ -435,6 +483,7 @@ def main(argv=None):
                 pin_cover=args.pin_cover,
                 config_path=args.config,
                 landscape_feed=args.landscape_feed,
+                page_overlay=args.page_overlay,
             )
     except ConfigError as e:
         print(f"error: {e}", file=sys.stderr)

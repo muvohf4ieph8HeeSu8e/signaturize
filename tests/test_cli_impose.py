@@ -93,23 +93,23 @@ def test_impose_cli_config_duplex_mirror_swaps_back_face(tmp_path):
 
 
 @requires_poppler
-def test_folio_cli_defaults_to_portrait_page_landscape_feed_restores_literal(tmp_path):
+def test_folio_cli_defaults_to_literal_landscape_page_portrait_feed_rotates(tmp_path):
     src = write_numbered_pdf(tmp_path / "src.pdf", 4)
 
     default_dir = tmp_path / "default"
     rc = main(["impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(default_dir)])
     assert rc == 0
-    # new default: physical page stays portrait, content rotated to compensate
-    assert pdf_page_size_in(default_dir / "x-imposed.pdf") == (8.5, 11.0)
+    # default: a literal landscape page, upright on screen
+    assert pdf_page_size_in(default_dir / "x-imposed.pdf") == (11.0, 8.5)
 
-    landscape_dir = tmp_path / "landscape"
+    portrait_dir = tmp_path / "portrait"
     rc = main([
-        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(landscape_dir),
-        "--landscape-feed",
+        "impose", str(src), "--slug", "x", "--scheme", "folio", "--output-dir", str(portrait_dir),
+        "--portrait-feed",
     ])
     assert rc == 0
-    # --landscape-feed opts back into a literal landscape page
-    assert pdf_page_size_in(landscape_dir / "x-imposed.pdf") == (11.0, 8.5)
+    # --portrait-feed opts into the /Rotate-flagged portrait page
+    assert pdf_page_size_in(portrait_dir / "x-imposed.pdf") == (8.5, 11.0)
 
 
 @requires_poppler

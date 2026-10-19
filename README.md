@@ -13,7 +13,7 @@ Run it as one command, or as its three independent stages:
   impose). `build` is pure composition of the three stage commands below
   -- it has no ingest/typeset/imposition logic of its own, just chains
   their own calls and passes `--paper`/`--scheme`/`--binding`/
-  `--pin-cover`/`--landscape-feed`/`--page-numbers` through to whichever
+  `--pin-cover`/`--portrait-feed`/`--page-numbers` through to whichever
   of them needs it.
 - `signaturize ingest <epub>` -- just the ingest stage: extract one tale
   into clean working text (HTML body + metadata + images), ready for
@@ -72,7 +72,7 @@ pip install -e .
 signaturize build <epub_path> --slug <slug> \
     [--config <toml-or-profile>] [--author "..."] \
     [--paper us-letter|a4] [--scheme single-leaf|folio|bag-fold] \
-    [--binding <profile>] [--pin-cover | --no-pin-cover] [--landscape-feed] \
+    [--binding <profile>] [--pin-cover | --no-pin-cover] [--portrait-feed] \
     [--page-numbers] [--prepared-line "..."]
 ```
 
@@ -116,8 +116,8 @@ bottom of page) to the story body only -- the title page, "THE END", and
 colophon stay unnumbered, and numbering restarts at 1 for the first body
 page. Off by default. This is unrelated to `impose`'s own per-panel
 page-number overlay below (a verification aid it draws itself, working
-on any typeset PDF, not just this project's own) -- the two can be used
-independently or together.
+on any typeset PDF, not just this project's own). When both would apply,
+`impose` notices the real numbers and leaves the overlay off by default.
 
 Then impose it, same as any other typeset PDF -- see below.
 
@@ -126,10 +126,10 @@ Then impose it, same as any other typeset PDF -- see below.
 ```
 signaturize impose <typeset_pdf> --slug <slug> \
     [--paper us-letter|a4] [--scheme single-leaf|folio|bag-fold] \
-    [--binding <profile>] [--config <toml-or-profile>] [--pin-cover] \
-    [--landscape-feed] \
+    [--binding <profile>] [--config <toml-or-profile>] [--pin-cover | --no-pin-cover] \
+    [--portrait-feed] \
     [--title "..."] [--output-dir output] [--preview-dir preview] \
-    [--test-sheet] [--no-marks]
+    [--test-sheet | --no-test-sheet] [--no-marks]
 ```
 
 Takes any already-typeset PDF (trim size already set to fit the chosen
@@ -143,8 +143,8 @@ under `--output-dir`:
   page map (which trim page lands on which physical half of each sheet,
   before folding) so you can check page order without opening the imposed
   PDF and flipping between a sheet's front and back pages
-- `<slug>-test-sheet.pdf` -- just signature 1, sheet 1, if `--test-sheet` is
-  passed; print and fold this by hand before committing to a full run
+- `<slug>-test-sheet.pdf` -- just signature 1, sheet 1, unless
+  `--no-test-sheet` is passed; print and fold this by hand before committing to a full run
 
 **Paper sizes** (`--paper`, see `PAPER_SIZES` in
 `src/signaturize/impose/scheme.py`): `us-letter` (8.5in x 11in, the
@@ -170,24 +170,18 @@ golden values in `tests/golden/legacy_nested_folio_layout.json` and
 checked in `tests/test_regression_legacy.py` and `tests/test_planner.py`.
 
 By default, a scheme that needs a logically-wide sheet (`folio`,
-`bag-fold`) does **not** produce a literal landscape PDF page -- not
-every printer or print workflow can feed paper long-edge-first. Instead
-`impose`/`build` build the page exactly as they would for a literal
-landscape page, then flag it with the PDF's standard `/Rotate` attribute
-so it displays and prints rotated into the paper's own natural (portrait)
-shape -- the printed sheet comes out physically identical to a literal
-landscape page, just encoded with the rotation flag instead of a literal
-landscape MediaBox. Pass `--landscape-feed` to get a literal landscape
-page instead, if your printer can feed paper that way. Either way, the
-content is necessarily sideways in a flat, straight-on preview (on
-screen, or a print preview) -- that's inherent to the feature, not a
-bug: you print onto portrait paper and physically turn the sheet 90
-degrees by hand before folding, so there's no way to also make it look
-upright in a flat preview; use the per-panel page numbers below to check
-order instead. The rotation direction is a reasoned default, not
-something verifiable without a physical print -- as with `duplex_mirror`
-below and the unimplemented multi-fold schemes above, verify with a
-physical `--test-sheet` before committing to a full run.
+`bag-fold`) produces a literal landscape PDF page, which displays upright
+on screen. This is the path checked against five physically printed and
+folded books. Pass `--portrait-feed` if your printer cannot take a
+landscape page: the page is then built the same way and flagged with the
+PDF's standard `/Rotate` attribute so it prints rotated into the paper's
+natural portrait shape. That encoding is necessarily sideways in a flat,
+straight-on preview (on screen, or a print preview), and it is a reasoned
+default rather than something physically confirmed. `--landscape-feed` is
+still accepted and does nothing now (it used to opt into the landscape
+page). Either way, verify with a physical `--test-sheet` (and the page
+numbers below) before committing to a full run, as with `duplex_mirror`
+below and the unimplemented multi-fold schemes above.
 
 **Binding profiles** (`--binding`, see
 `src/signaturize/impose/binding_profiles/*.toml`): `pamphlet` (staple, no
@@ -209,10 +203,8 @@ the general planner, the same way it already does for any page count
 sheets -- e.g. a 29-page book -- with no special-casing beyond the cover
 pin itself). This is the content-layer convention
 `typeset.pamphlet.build()`'s fixed title-page template is designed
-around, and what `build` passes by default (`--no-pin-cover` to
-disable). Off by default for plain `signaturize impose`, since it's a
-decision about the typeset PDF's own content, not something general
-imposition has an opinion on.
+around, and on by default for both `build` and `impose` (`--no-pin-cover`
+to disable -- do so for an arbitrary PDF whose page 1 isn't a cover).
 
 A small page number labels every panel by default (its trim page
 number, bottom-center of its cell) so you can verify order after
@@ -221,6 +213,10 @@ collation mark (a staggered bar on the spine) is added once per
 signature, on its outermost sheet's outward-facing side -- not once per
 sheet, since its purpose (checking a gathered stack of signatures
 without unfolding any of them) only makes sense once per signature.
+If the source PDF already prints its own page numbers (a numbered
+footer or header that steps up page by page), `impose` detects that and
+skips the page-number label so the two don't stack; the collation marks
+are kept. Control it with `--page-overlay auto|on|off` (default `auto`).
 Pass `--no-marks` to omit both. The exact mark convention is documented,
 and reasonable, but not tied to one specific bindery's house standard --
 verify with a
